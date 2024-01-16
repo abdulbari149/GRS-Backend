@@ -64,7 +64,3 @@ def get_srs(id):
 def staticfiles(filename):
     return send_from_directory('./assets/documents', filename)
 
-if __name__ == '__main__':
-  app.run()
-
-
