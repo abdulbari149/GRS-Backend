@@ -8,7 +8,11 @@ from reportlab.lib.pagesizes import letter
 from db import get_db
 from models.srs import SrsModel
 import datetime
+from celery_config import celery_app, celery
 
+@celery_app.task(name="my_create_task")
+def create_task(generator,body):
+    return generator.generate_and_save_srs_async(body['name'], body['description'])
 
 class SRSGenerator:
   
@@ -34,6 +38,7 @@ class SRSGenerator:
     {"role": "user", "content": f"{prompt}"},
 ]
     prompt = self.pipe.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True) 
+    print('Inference starting')
     outputs = self._infer(prompt)
     
     srs_output = outputs[0]["generated_text"].split('<|assistant|>\n')[1]
@@ -81,20 +86,20 @@ class SRSGenerator:
 
     # Build a Story with paragraphs
     story = [title_paragraph] + text_paragraphs
-
-
     
     # Build the PDF document with the Story
     pdf_doc.build(story)
     return f"assets/documents/{file_name}.pdf"
+  
     
-def generate_and_save_srs_async(self, name, description):
+  def generate_and_save_srs_async(self, name, description):
         file_name = datetime.now(datetime.timezone.utc).timestamp()
-        self.executor.submit(self._generate_srs, name, description, file_name)
+        self._generate_srs(name, description, file_name)
 
-def get_srs_status(self, srs_id):
+
+  def get_srs_status(self, srs_id):
         db = get_db()
-        srs = SrsModel.query.get(srs_id)
+        srs = SrsModel.get_by_id(srs_id)
         if srs:
             return {
                 'id': srs.id,
@@ -105,8 +110,3 @@ def get_srs_status(self, srs_id):
             }
         else:
             return None
-    
-    
-      
-      
-        

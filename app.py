@@ -1,19 +1,17 @@
 from flask import Flask, request, send_from_directory, jsonify
-from generator import SRSGenerator
+from generator import SRSGenerator, create_task
 from os import path
 from db import init_app, get_db
 from errors.ApiException import ApiException
 from models.srs import SrsModel
-from datetime import datetime, timezone
-from concurrent.futures import ThreadPoolExecutor
-import json 
+from celery_config import celery_app
+from celery.result import AsyncResult
   
 app = Flask(__name__)
 app.config['DATABASE'] = path.join(path.dirname(__file__), 'db.sqlite')
+celery_app.conf.update(app.config)
 generator = SRSGenerator()
 init_app(app)
-
-executor = ThreadPoolExecutor()
 
 
 @app.route('/')
@@ -35,8 +33,9 @@ def generate():
 
   if not body_validation(body, ['name', 'description']):
     return 'Missing fields', 400
-
-  executor.submit(generator.generate_and_save_srs_async, body['name'], body['description'])
+  
+  task = create_task.apply_async(args=(generator,body))
+  body['task_id'] = task.id
   
   try: 
     srs = SrsModel.save_to_db(body)
@@ -49,14 +48,7 @@ def generate():
   except ApiException as e:
     return e.payload, e.status_code
 
-# /api/srs/:id
-@app.route('/api/srs/<int:srs_id>', methods=['GET'])
-def get_srs_status(srs_id):
-    srs_status = generator.get_srs_status(srs_id)
-    if srs_status:
-        return jsonify(srs_status), 200
-    else:
-        return 'SRS not found', 404  
+
 
 @app.route('/api/srs/<int:id>', methods=['GET'])
 def get_srs(id):
@@ -69,7 +61,21 @@ def get_srs(id):
     }, 200
   except ApiException as e:
     return e.payload, e.status_code 
-  
+
+@app.get("/api/srs/<int:id>/result")
+def task_result(id: str) -> dict[str, object]:
+  try:
+    srs = SrsModel.get_by_id(id)
+    result = AsyncResult(id = srs['task_id'])
+    return {
+        "ready": result.ready(),
+        "successful": result.successful(),
+        "value": result.result if result.ready() else None,
+    }  
+  except ApiException as e:
+    return e.payload, e.status_code 
+    
+    
 
 
 @app.route('/documents/<path:filename>')

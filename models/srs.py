@@ -6,7 +6,7 @@ class SrsModel:
   def save_to_db(data: dict):
     conn = get_db()
     try: 
-      cursor = conn.execute('INSERT INTO srs (name, description) VALUES (?, ?)', (data['name'], data['description']))
+      cursor = conn.execute('INSERT INTO srs (name, description,task_id) VALUES (?, ?, ?)', (data['name'], data['description'], data['task_id']))
       conn.commit() 
 
     except Exception as e:
@@ -21,11 +21,12 @@ class SrsModel:
     print(list(row))
     data = {
       'id': row[0],
-      'name': row[1],
-      'description': row[2],
-      'created': row[3],
-      'is_completed': bool(row[4]),
-      'file_url': row[5]
+      'task_id': row[1],
+      'name': row[2],
+      'description': row[3],
+      'created': row[4],
+      'is_completed': bool(row[5]),
+      'file_url': row[6]
     }
     return data
 
@@ -34,9 +35,21 @@ class SrsModel:
     conn = get_db()
     try:
       print(id)
-      cursor = conn.execute('SELECT id, name, description, created, is_completed, file_url FROM srs WHERE id = ?', (id,))
+      cursor = conn.execute('SELECT id, task_id, name, description, created, is_completed, file_url FROM srs WHERE id = ?', (id,))
       row = cursor.fetchone()
     except Exception as e:
       print(e)
       raise ApiException('Error while fetching from database', 500)
     return SrsModel.convert_data(row)
+  
+  @staticmethod
+  def get_task_id(id: int):
+    conn = get_db()
+    try:
+      print(id)
+      cursor = conn.execute('SELECT task_id FROM srs WHERE id = ?', (id,))
+      row = cursor.fetchone()
+    except Exception as e:
+      print(e)
+      raise ApiException('Error while fetching from database', 500)
+    return {'task_id': row[0]}
