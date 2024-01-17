@@ -1,5 +1,5 @@
 from flask import Flask, request, send_from_directory, jsonify
-from generator import SRSGenerator, create_task
+from generator import SRSGenerator
 from os import path
 from db import init_app, get_db
 from errors.ApiException import ApiException
@@ -10,6 +10,7 @@ from celery.result import AsyncResult
 app = Flask(__name__)
 app.config['DATABASE'] = path.join(path.dirname(__file__), 'db.sqlite')
 celery_app.conf.update(app.config)
+global generator
 generator = SRSGenerator()
 init_app(app)
 
@@ -34,7 +35,7 @@ def generate():
   if not body_validation(body, ['name', 'description']):
     return 'Missing fields', 400
   
-  task = create_task.apply_async(args=(generator,body))
+  task = generate_and_save_srs_async.apply_async(args=(body['name'],body['description']))
   body['task_id'] = task.id
   
   try: 
@@ -81,4 +82,9 @@ def task_result(id: str) -> dict[str, object]:
 @app.route('/documents/<path:filename>')
 def staticfiles(filename):
     return send_from_directory('./assets/documents', filename)
+  
+  
+@celery_app.task(name="my_create_task")  
+def generate_and_save_srs_async(name, description):
+      generator.generate_srs(name, description, file_name)  
 

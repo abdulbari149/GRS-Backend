@@ -7,12 +7,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Frame, PageTemplate
 from reportlab.lib.pagesizes import letter
 from db import get_db
 from models.srs import SrsModel
-import datetime
-from celery_config import celery_app, celery
-
-@celery_app.task(name="my_create_task")
-def create_task(generator,body):
-    return generator.generate_and_save_srs_async(body['name'], body['description'])
+import datetime as dt
 
 class SRSGenerator:
   
@@ -20,15 +15,15 @@ class SRSGenerator:
     self.pipe = pipeline("text-generation", model="TinyLlama/TinyLlama-1.1B-Chat-v1.0", torch_dtype=torch.bfloat16, device_map="auto")
     self.executor = ThreadPoolExecutor()
   
-  def _create_prompt(self,name,description):
-    return f'Generate an SRS document where the topic is {name} and description is {self.description}'
+  def _create_prompt(self, name, description):
+    return f'Generate an SRS document where the topic is {name} and description is {description}'
   
   
   def _infer(self, prompt):
     return self.pipe(prompt, max_new_tokens=1024, do_sample=True, temperature=0.7, top_k=50, top_p=0.95)
   
   
-  def _generate_srs(self,name,description, file_name):
+  def generate_srs(self,name,description):
     prompt = self._create_prompt(name,description)
     messages = [
     {
@@ -42,15 +37,17 @@ class SRSGenerator:
     outputs = self._infer(prompt)
     
     srs_output = outputs[0]["generated_text"].split('<|assistant|>\n')[1]
-    pdf_path = self._create_pdf(name, srs_output, file_name)
-    file_url = f"http://127.0.0.1:5000/documents/{file_name}.pdf"
+    file_url = self._create_pdf(name, srs_output)
+    # file_url = f"http://127.0.0.1:5000/documents/{file_name}.pdf"
     db = get_db()
     srs = SrsModel(name=name, description=description, file_url=file_url, is_completed=1)
     db.session.add(srs)
     db.session.commit()
 
 
-  def _create_pdf(self, title, text, file_name):    
+  def _create_pdf(self, title, text):    
+    file_name = dt.datetime.now(dt.timezone.utc).timestamp()
+
     if not os.path.exists('assets/documents'):
       os.makedirs('assets/documents')
     # Create pdf doc  
@@ -90,12 +87,6 @@ class SRSGenerator:
     # Build the PDF document with the Story
     pdf_doc.build(story)
     return f"assets/documents/{file_name}.pdf"
-  
-    
-  def generate_and_save_srs_async(self, name, description):
-        file_name = datetime.now(datetime.timezone.utc).timestamp()
-        self._generate_srs(name, description, file_name)
-
 
   def get_srs_status(self, srs_id):
         db = get_db()
