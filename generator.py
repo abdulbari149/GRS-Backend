@@ -4,7 +4,6 @@ import os
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Frame, PageTemplate
 from reportlab.lib.pagesizes import letter
-from app import database
 from models.srs import SrsModel
 import datetime as dt
 class SRSGenerator:
@@ -20,8 +19,8 @@ class SRSGenerator:
     return self.pipe(prompt, max_new_tokens=1024, do_sample=True, temperature=0.7, top_k=50, top_p=0.95)
   
   
-  def generate_srs(self,name,description):
-    prompt = self._create_prompt(name,description)
+  def generate_srs(self,data,database ):
+    prompt = self._create_prompt(data['name'],data['description'])
     messages = [
     {
         "role": "system",
@@ -32,13 +31,12 @@ class SRSGenerator:
     prompt = self.pipe.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True) 
     print('Inference starting')
     outputs = self._infer(prompt)
-    
     srs_output = outputs[0]["generated_text"].split('<|assistant|>\n')[1]
-    file_url = self._create_pdf(name, srs_output)
+    file_url = self._create_pdf(data['name'], srs_output)
     # file_url = f"http://127.0.0.1:5000/documents/{file_name}.pdf"
-    srs = SrsModel(name=name, description=description, file_url=file_url, is_completed=1)
-    database.session.add(srs)
-    database.session.commit()
+    updated_data = { 'id':data['id'], "file_url":file_url, "is_completed":1}
+    srs = SrsModel.update_in_db(updated_data)
+    print("Database Updated")
 
 
   def _create_pdf(self, title, text):    

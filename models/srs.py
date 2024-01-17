@@ -1,4 +1,4 @@
-from db import get_db
+from db import get_db, get_db_thread
 from errors.ApiException import ApiException
 
 class SrsModel:
@@ -41,15 +41,18 @@ class SrsModel:
       print(e)
       raise ApiException('Error while fetching from database', 500)
     return SrsModel.convert_data(row)
-  
+
   @staticmethod
-  def get_task_id(id: int):
-    conn = get_db()
-    try:
-      print(id)
-      cursor = conn.execute('SELECT task_id FROM srs WHERE id = ?', (id,))
-      row = cursor.fetchone()
-    except Exception as e:
-      print(e)
-      raise ApiException('Error while fetching from database', 500)
-    return {'task_id': row[0]}
+  def update_in_db(data: dict):
+        #try:
+        conn = get_db_thread()
+        cursor = conn.execute(
+            'UPDATE srs SET  is_completed=?, file_url=? WHERE id=?',
+            (data['is_completed'], data['file_url'], data['id'])
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        # except Exception as e:
+        #     conn.rollback()
+        #     raise ApiException('Error while updating database', 500)
+        return SrsModel.convert_data(row)

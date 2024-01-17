@@ -14,7 +14,7 @@ bg_thread = None
 app = Flask(__name__)
 #run_with_ngrok(app)
 app.config['DATABASE'] = path.join(path.dirname(__file__), 'db.sqlite')
-database = get_db()
+
 generator = SRSGenerator()
 
 init_app(app)
@@ -44,15 +44,18 @@ def generate():
     
     if bg_thread and bg_thread.is_alive():
         print("Stopping previous background thread...")
-        bg_thread.stop()
+        bg_thread.deamon()
 
     try:
         print("Starting new background thread...")
-        bg_thread = threading.Thread(target=generator.generate_srs, args=(body['name'], body['description']))
-        bg_thread.start()
+        database = get_db()
         
         body['task_id'] = 'task.id'
         srs = SrsModel.save_to_db(body)
+        
+        bg_thread = threading.Thread(target=generator.generate_srs, args=(srs, database))
+        bg_thread.start()
+        
     
         return {
             "data": srs,
@@ -81,5 +84,5 @@ def staticfiles(filename):
 def stop_background_task():
     print("CleanUp ... Stopping background thread...")
     if bg_thread and bg_thread.is_alive():
-        bg_thread.stop()
+        bg_thread.deamon()
 atexit.register(stop_background_task)
