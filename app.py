@@ -1,90 +1,85 @@
-from flask import Flask, request, send_from_directory, jsonify
-from generator import SRSGenerator
-from os import path
 from db import init_app, get_db
 from errors.ApiException import ApiException
 from models.srs import SrsModel
-from celery_config import celery_app
-from celery.result import AsyncResult
-  
+
+from flask import Flask, request, send_from_directory
+from os import path
+from generator import SRSGenerator, SrsModel
+import threading
+import atexit
+# from flask_ngrok import run_with_ngrok
+
+bg_thread = None
+
 app = Flask(__name__)
+#run_with_ngrok(app)
 app.config['DATABASE'] = path.join(path.dirname(__file__), 'db.sqlite')
-celery_app.conf.update(app.config)
-global generator
+database = get_db()
 generator = SRSGenerator()
+
 init_app(app)
 
 
 @app.route('/')
 def hello_world():
-  return 'Hello, World!'
+    return 'Hello, World!'
+
 
 def body_validation(body, fields):
-  for field in fields:
-    if field not in body:
-      return False
-  return True
+    for field in fields:
+        if field not in body:
+            return False
+    return True
+
 
 # body = { name, description }
 
 @app.route('/api/generate', methods=['POST'])
 def generate():
-  body = request.get_json()
+    global bg_thread
+    body = request.get_json()
 
-
-  if not body_validation(body, ['name', 'description']):
-    return 'Missing fields', 400
-  
-  task = generate_and_save_srs_async.apply_async(args=(body['name'],body['description']))
-  body['task_id'] = task.id
-  
-  try: 
-    srs = SrsModel.save_to_db(body)
+    if not body_validation(body, ['name', 'description']):
+        return 'Missing fields', 400
     
+    if bg_thread and bg_thread.is_alive():
+        print("Stopping previous background thread...")
+        bg_thread.stop()
+
+    try:
+        print("Starting new background thread...")
+        bg_thread = threading.Thread(target=generator.generate_srs, args=(body['name'], body['description']))
+        bg_thread.start()
+        
+        body['task_id'] = 'task.id'
+        srs = SrsModel.save_to_db(body)
     
-    return {
-      "data": srs,
-      "message": "SRS is generating. Please wait a moment."
-    }, 201
-  except ApiException as e:
-    return e.payload, e.status_code
-
-
+        return {
+            "data": srs,
+            "message": "SRS is generating. Please wait a moment."
+        }, 201
+    except ApiException as e:
+        return e.payload, e.status_code
 
 @app.route('/api/srs/<int:id>', methods=['GET'])
 def get_srs(id):
-  
-  try:
-    srs = SrsModel.get_by_id(id)
-    return {
-      "data": srs,
-      "message": "SRS is generating. Please wait a moment."
-    }, 200
-  except ApiException as e:
-    return e.payload, e.status_code 
-
-@app.get("/api/srs/<int:id>/result")
-def task_result(id: str) -> dict[str, object]:
-  try:
-    srs = SrsModel.get_by_id(id)
-    result = AsyncResult(id = srs['task_id'])
-    return {
-        "ready": result.ready(),
-        "successful": result.successful(),
-        "value": result.result if result.ready() else None,
-    }  
-  except ApiException as e:
-    return e.payload, e.status_code 
-    
-    
+    try:
+        srs = SrsModel.get_by_id(id)
+        return {
+            "data": srs,
+            "message": "SRS is generating. Please wait a moment."
+        }, 200
+    except ApiException as e:
+        return e.payload, e.status_code
 
 
 @app.route('/documents/<path:filename>')
 def staticfiles(filename):
     return send_from_directory('./assets/documents', filename)
-  
-  
-@celery_app.task(name="my_create_task")  
-def generate_and_save_srs_async(name, description):
-      generator.generate_srs(name, description, file_name)  
 
+# Register a function to stop the thread when the application exits
+def stop_background_task():
+    print("CleanUp ... Stopping background thread...")
+    if bg_thread and bg_thread.is_alive():
+        bg_thread.stop()
+atexit.register(stop_background_task)

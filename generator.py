@@ -1,19 +1,16 @@
 import torch
 from transformers import pipeline
-from concurrent.futures import ThreadPoolExecutor
 import os
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Frame, PageTemplate
 from reportlab.lib.pagesizes import letter
-from db import get_db
+from app import database
 from models.srs import SrsModel
 import datetime as dt
-
 class SRSGenerator:
-  
   def __init__(self):
     self.pipe = pipeline("text-generation", model="TinyLlama/TinyLlama-1.1B-Chat-v1.0", torch_dtype=torch.bfloat16, device_map="auto")
-    self.executor = ThreadPoolExecutor()
+    
   
   def _create_prompt(self, name, description):
     return f'Generate an SRS document where the topic is {name} and description is {description}'
@@ -39,10 +36,9 @@ class SRSGenerator:
     srs_output = outputs[0]["generated_text"].split('<|assistant|>\n')[1]
     file_url = self._create_pdf(name, srs_output)
     # file_url = f"http://127.0.0.1:5000/documents/{file_name}.pdf"
-    db = get_db()
     srs = SrsModel(name=name, description=description, file_url=file_url, is_completed=1)
-    db.session.add(srs)
-    db.session.commit()
+    database.session.add(srs)
+    database.session.commit()
 
 
   def _create_pdf(self, title, text):    
@@ -87,17 +83,3 @@ class SRSGenerator:
     # Build the PDF document with the Story
     pdf_doc.build(story)
     return f"assets/documents/{file_name}.pdf"
-
-  def get_srs_status(self, srs_id):
-        db = get_db()
-        srs = SrsModel.get_by_id(srs_id)
-        if srs:
-            return {
-                'id': srs.id,
-                'name': srs.name,
-                'description': srs.description,
-                'file_url': srs.file_url,
-                'is_completed': srs.is_completed
-            }
-        else:
-            return None
